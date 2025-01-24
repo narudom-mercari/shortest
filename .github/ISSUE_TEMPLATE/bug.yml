@@ -15,9 +15,9 @@ body:
   - type: input
     id: repo
     attributes:
-      label: Repository URL
-      description: Link to your reproduction using the [shortest-example](https://github.com/anti-work/shortest-example) template
-      placeholder: https://github.com/username/shortest-example
+      label: Your repository URL
+      description: Link to your repository URL that was created using the [shortest-example](https://github.com/anti-work/shortest-example) template
+      placeholder: https://github.com/YOUR_USERNAME/shortest-example
     validations:
       required: true
   - type: textarea
@@ -27,6 +27,7 @@ body:
       description: |
         What happened? Include any error messages or unexpected output.
         Screenshots are welcome, but text is strongly encouraged for searchability.
+        No need to include Shortest config or code here, that should be in the repository linked above.
       placeholder: Describe what went wrong...
     validations:
       required: true
