@@ -37,7 +37,7 @@ export default {
 } satisfies ShortestConfig;
 ```
 
-2. Write your test in your test directory: `app/__tests__/login.test.ts`
+2. Create test files using the pattern specified in the config: `app/login.test.ts`
 
 ```typescript
 import { shortest } from "@antiwork/shortest";
