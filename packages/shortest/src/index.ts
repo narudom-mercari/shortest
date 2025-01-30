@@ -2,6 +2,7 @@ import { join } from "path";
 import dotenv from "dotenv";
 import { expect as jestExpect } from "expect";
 import { APIRequest } from "./browser/core/api-request";
+import { CONFIG_FILENAME, ENV_LOCAL_FILENAME } from "./constants";
 import { TestCompiler } from "./core/compiler";
 import {
   TestFunction,
@@ -42,7 +43,7 @@ if (!global.__shortest__) {
   global.expect = global.__shortest__.expect;
 
   dotenv.config({ path: join(process.cwd(), ".env") });
-  dotenv.config({ path: join(process.cwd(), ".env.local") });
+  dotenv.config({ path: join(process.cwd(), ENV_LOCAL_FILENAME) });
 }
 
 function validateConfig(config: Partial<ShortestConfig>) {
@@ -56,7 +57,7 @@ function validateConfig(config: Partial<ShortestConfig>) {
 
   if (missingFields.length > 0) {
     throw new Error(
-      `Missing required fields in shortest.config.ts:\n` +
+      `Missing required fields in ${CONFIG_FILENAME}:\n` +
         missingFields.map((field) => `  - ${field}`).join("\n"),
     );
   }
@@ -66,10 +67,10 @@ export async function initialize() {
   if (globalConfig) return globalConfig;
 
   dotenv.config({ path: join(process.cwd(), ".env") });
-  dotenv.config({ path: join(process.cwd(), ".env.local") });
+  dotenv.config({ path: join(process.cwd(), ENV_LOCAL_FILENAME) });
 
   const configFiles = [
-    "shortest.config.ts",
+    CONFIG_FILENAME,
     "shortest.config.js",
     "shortest.config.mjs",
   ];
@@ -97,7 +98,7 @@ export async function initialize() {
   }
 
   throw new Error(
-    "No config file found. Create shortest.config.ts in your project root.\n" +
+    `No config file found. Create ${CONFIG_FILENAME} in your project root.\n` +
       "Required fields:\n" +
       "  - headless: boolean\n" +
       "  - baseUrl: string\n" +

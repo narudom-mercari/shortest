@@ -18,7 +18,8 @@
   },
   "files": [
     "dist",
-    "dist/cli"
+    "dist/cli",
+    "src/shortest.config.ts.example"
   ],
   "scripts": {
     "build": "rimraf dist && pnpm build:types && pnpm build:js && pnpm build:cli",
