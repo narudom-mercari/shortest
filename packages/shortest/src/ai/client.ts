@@ -53,6 +53,10 @@ export class AIClient {
           toolOutputCallback,
         );
       } catch (error: any) {
+        if ([401, 403, 500].includes(error.status)) {
+          throw error;
+        }
+
         attempts++;
         if (attempts === maxRetries) throw error;
 
