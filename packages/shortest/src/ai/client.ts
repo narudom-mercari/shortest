@@ -1,8 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
-import pc from "picocolors";
 import { BashTool } from "../browser/core/bash-tool";
 import { BrowserTool } from "../browser/core/browser-tool";
 import { CONFIG_FILENAME } from "../constants";
+import { getLogger, Log } from "../log/index";
 import { ToolResult } from "../types";
 import { AIConfig, RequestBash, RequestComputer } from "../types/ai";
 import { CacheAction, CacheStep } from "../types/cache";
@@ -13,12 +13,15 @@ export class AIClient {
   private client: Anthropic;
   private model: string;
   private maxMessages: number;
-  private debug: boolean;
-  private legacyOutputEnabled: boolean;
+  private log: Log;
 
   constructor(config: AIConfig) {
-    this.legacyOutputEnabled = config.legacyOutputEnabled;
+    this.log = getLogger();
+    this.log.trace("Initializing AIClient", { config });
     if (!config.apiKey) {
+      this.log.error(
+        `Anthropic API key is required. Set it in ${CONFIG_FILENAME} or ANTHROPIC_API_KEY env var`,
+      );
       throw new Error(
         `Anthropic API key is required. Set it in ${CONFIG_FILENAME} or ANTHROPIC_API_KEY env var`,
       );
@@ -29,7 +32,6 @@ export class AIClient {
     });
     this.model = "claude-3-5-sonnet-20241022";
     this.maxMessages = 10;
-    this.debug = config.debug;
   }
 
   async processAction(
@@ -63,9 +65,7 @@ export class AIClient {
         attempts++;
         if (attempts === maxRetries) throw error;
 
-        if (this.legacyOutputEnabled) {
-          console.log(`  Retry attempt ${attempts}/${maxRetries}`);
-        }
+        this.log.debug("Retry attempt", { attempt: attempts, maxRetries });
         await new Promise((r) => setTimeout(r, 5000 * attempts));
       }
     }
@@ -91,12 +91,9 @@ export class AIClient {
   }> {
     const messages: Anthropic.Beta.Messages.BetaMessageParam[] = [];
     const pendingCache: Partial<{ steps?: CacheStep[] }> = {};
+
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
-    if (this.debug && this.legacyOutputEnabled) {
-      console.log(pc.cyan("\n🤖 Prompt:"), pc.dim(prompt));
-    }
-
     messages.push({
       role: "user",
       content: prompt,
@@ -105,7 +102,7 @@ export class AIClient {
     while (true) {
       try {
         await new Promise((resolve) => setTimeout(resolve, 1000));
-
+        this.log.trace("Making request", { prompt });
         const response = await this.client.beta.messages.create({
           model: this.model,
           max_tokens: 1024,
@@ -114,7 +111,6 @@ export class AIClient {
           tools: [...AITools],
           betas: ["computer-use-2024-10-22"],
         });
-        // Log AI response and tool usage
 
         totalInputTokens += response.usage.input_tokens;
         totalOutputTokens += response.usage.output_tokens;
@@ -123,25 +119,19 @@ export class AIClient {
           output: totalOutputTokens,
         };
 
-        if (this.debug && this.legacyOutputEnabled) {
-          response.content.forEach((block) => {
-            if (block.type === "text") {
-              if (this.legacyOutputEnabled) {
-                console.log(pc.green("\n🤖 AI:"), pc.dim((block as any).text));
-              }
-            } else if (block.type === "tool_use") {
-              const toolBlock =
-                block as Anthropic.Beta.Messages.BetaToolUseBlock;
-
-              if (this.legacyOutputEnabled) {
-                console.log(pc.yellow("\n🔧 Tool Request:"), {
-                  tool: toolBlock.name,
-                  input: toolBlock.input,
-                });
-              }
-            }
-          });
-        }
+        response.content.forEach((block) => {
+          if (block.type === "text") {
+            this.log.debug("Response", {
+              response: (block as any).text,
+            });
+          } else if (block.type === "tool_use") {
+            const toolBlock = block as Anthropic.Beta.Messages.BetaToolUseBlock;
+            this.log.debug("Tool request", {
+              tool: toolBlock.name,
+              input: toolBlock.input,
+            });
+          }
+        });
 
         // Add assistant's response to history
         messages.push({
@@ -160,14 +150,12 @@ export class AIClient {
               switch (toolRequest.name) {
                 case "bash":
                   try {
-                    const toolResult = await new BashTool(
-                      this.legacyOutputEnabled,
-                    ).execute((toolRequest as RequestBash).input.command);
+                    const toolResult = await new BashTool().execute(
+                      (toolRequest as RequestBash).input.command,
+                    );
                     return { toolRequest, toolResult };
                   } catch (error) {
-                    if (this.legacyOutputEnabled) {
-                      console.error("Error executing bash command:", error);
-                    }
+                    this.log.error("Error executing bash command", { error });
                     throw error;
                   }
                 default:
@@ -202,9 +190,7 @@ export class AIClient {
 
                     return { toolRequest, toolResult };
                   } catch (error) {
-                    if (this.legacyOutputEnabled) {
-                      console.error("Error executing browser tool:", error);
-                    }
+                    this.log.error("Error executing browser tool", { error });
                     throw error;
                   }
               }
@@ -274,12 +260,11 @@ export class AIClient {
         }
       } catch (error: any) {
         if (error.message?.includes("rate_limit")) {
-          if (this.legacyOutputEnabled) {
-            console.log("⏳ Rate limited, waiting 60s...");
-          }
+          this.log.debug("⏳", "Rate limited, waiting 60s...");
           await new Promise((resolve) => setTimeout(resolve, 60000));
           continue;
         }
+        this.log.error("AI request failed", { error });
         throw error;
       }
     }

@@ -18,6 +18,7 @@ import { join } from "path";
 import pc from "picocolors";
 import { Page } from "playwright";
 import { getConfig, initializeConfig } from "../../index";
+import { getLogger, Log } from "../../log/index";
 import {
   TestContext,
   BrowserToolConfig,
@@ -48,12 +49,10 @@ export class BrowserTool extends BaseBrowserTool {
   private readonly MAX_AGE_HOURS = 5;
   private mailosaurTool?: MailosaurTool;
   private config!: ShortestConfig;
-  private legacyOutputEnabled: boolean;
-
+  private log: Log;
   constructor(
     page: Page,
     browserManager: BrowserManager,
-    legacyOutputEnabled: boolean,
     config: BrowserToolConfig,
   ) {
     super(config);
@@ -63,8 +62,7 @@ export class BrowserTool extends BaseBrowserTool {
     mkdirSync(this.screenshotDir, { recursive: true });
     this.viewport = { width: config.width, height: config.height };
     this.testContext = config.testContext;
-    this.legacyOutputEnabled = legacyOutputEnabled;
-
+    this.log = getLogger();
     // Update active page reference to a newly opened tab
     this.page.context().on("page", async (newPage) => {
       await newPage.waitForLoadState("domcontentloaded").catch(() => {});
@@ -85,12 +83,11 @@ export class BrowserTool extends BaseBrowserTool {
           await this.initializeCursor();
           break;
         } catch (error) {
-          if (this.legacyOutputEnabled) {
-            console.warn(
-              `Retry ${i + 1}/3: Cursor initialization failed:`,
-              error,
-            );
-          }
+          this.log.debug("Cursor initialization failed", {
+            attempt: i + 1,
+            maxAttempts: 3,
+            error,
+          });
           await new Promise((resolve) => setTimeout(resolve, 100));
         }
       }
@@ -201,18 +198,18 @@ export class BrowserTool extends BaseBrowserTool {
         !error.message.includes("context was destroyed") &&
         !error.message.includes("Target closed")
       ) {
-        if (this.legacyOutputEnabled) {
-          console.warn("Cursor initialization failed:", error);
-        }
+        this.log.error("Cursor initialization failed", { error });
       }
     }
   }
 
   public async click(selector: string): Promise<void> {
+    this.log.debug("Clicking element", { selector });
     await this.page.click(selector);
   }
 
   public async clickAtCoordinates(x: number, y: number): Promise<void> {
+    this.log.debug("Clicking at coordinates", { x, y });
     await actions.click(this.page, x, y);
   }
 
@@ -421,9 +418,9 @@ export class BrowserTool extends BaseBrowserTool {
                 timeout: 5000,
               })
               .catch((error) => {
-                if (this.legacyOutputEnabled) {
-                  console.log("⚠️ Load timeout, continuing anyway", error);
-                }
+                this.log.debug("⚠️", "Load timeout, continuing anyway", {
+                  error,
+                });
               });
 
             // Switch focus
@@ -455,21 +452,14 @@ export class BrowserTool extends BaseBrowserTool {
 
           // Enforce maximum duration
           if (duration > maxDuration) {
-            if (this.legacyOutputEnabled) {
-              console.warn(
-                `Requested sleep duration ${duration}ms exceeds maximum of ${maxDuration}ms. Using maximum.`,
-              );
-            }
+            this.log.debug(
+              `Requested sleep duration ${duration}ms exceeds maximum of ${maxDuration}ms. Using maximum.`,
+            );
             duration = maxDuration;
           }
 
-          // Convert to seconds for logging
           const seconds = Math.round(duration / 1000);
-          if (this.legacyOutputEnabled) {
-            console.log(
-              `⏳ Waiting for ${seconds} second${seconds !== 1 ? "s" : ""}...`,
-            );
-          }
+          this.log.debug("⏳", "Waiting ...", { seconds });
 
           await this.page.waitForTimeout(duration);
           output = `Finished waiting for ${seconds} second${seconds !== 1 ? "s" : ""}`;
@@ -527,9 +517,9 @@ export class BrowserTool extends BaseBrowserTool {
                 timeout: 5000,
               })
               .catch((error) => {
-                if (this.legacyOutputEnabled) {
-                  console.log("⚠️ Load timeout, continuing anyway", error);
-                }
+                this.log.debug("⚠️", "Load timeout, continuing anyway", {
+                  error,
+                });
               });
 
             // Switch focus
@@ -591,9 +581,7 @@ export class BrowserTool extends BaseBrowserTool {
         await this.page.waitForTimeout(200);
         metadata = await this.getMetadata();
       } catch (metadataError) {
-        if (this.legacyOutputEnabled) {
-          console.warn("Failed to get metadata:", metadataError);
-        }
+        this.log.debug("Failed to get metadata:", { metadataError });
         metadata = {};
       }
 
@@ -602,9 +590,7 @@ export class BrowserTool extends BaseBrowserTool {
         metadata,
       };
     } catch (error) {
-      if (this.legacyOutputEnabled) {
-        console.error(pc.red("\n❌ Browser Action Failed:"), error);
-      }
+      this.log.error(pc.red("Browser action failed"), { error });
 
       if (error instanceof AssertionCallbackError) {
         return {
@@ -667,9 +653,7 @@ export class BrowserTool extends BaseBrowserTool {
 
       return metadata;
     } catch (error) {
-      if (this.legacyOutputEnabled) {
-        console.warn("Failed to get metadata:", error);
-      }
+      this.log.debug("Failed to get metadata:", { error });
       // Return whatever metadata we collected
       return metadata;
     }
@@ -705,9 +689,7 @@ export class BrowserTool extends BaseBrowserTool {
 
     writeFileSync(filePath, buffer);
     const filePathWithoutCwd = filePath.replace(process.cwd() + "/", "");
-    if (this.legacyOutputEnabled) {
-      console.log(`  Screenshot saved to: ${filePathWithoutCwd}`);
-    }
+    this.log.debug("📺", "Screenshot saved", { filePath: filePathWithoutCwd });
 
     return {
       output: "Screenshot taken",
@@ -731,18 +713,22 @@ export class BrowserTool extends BaseBrowserTool {
     selector: string,
     options?: { timeout: number },
   ): Promise<void> {
+    this.log.debug("Waiting for selector", { selector });
     await this.page.waitForSelector(selector, options);
   }
 
   public async fill(selector: string, value: string): Promise<void> {
+    this.log.debug("Filling element", { selector, value });
     await this.page.fill(selector, value);
   }
 
   public async press(selector: string, key: string): Promise<void> {
+    this.log.debug("Pressing key on element", { key, element: selector });
     await this.page.press(selector, key);
   }
 
   public async findElement(selector: string) {
+    this.log.debug("Finding element", { selector });
     return this.page.$(selector);
   }
 
@@ -751,6 +737,7 @@ export class BrowserTool extends BaseBrowserTool {
   }
 
   public async waitForNavigation(options?: { timeout: number }): Promise<void> {
+    this.log.debug("Waiting for navigation");
     await this.page.waitForLoadState("load", { timeout: options?.timeout });
   }
 
@@ -780,16 +767,12 @@ export class BrowserTool extends BaseBrowserTool {
           try {
             unlinkSync(file.path);
           } catch (error) {
-            if (this.legacyOutputEnabled) {
-              console.warn(`Failed to delete screenshot: ${file.path}`, error);
-            }
+            this.log.error(pc.red("Failed to delete screenshot"), { error });
           }
         }
       });
     } catch (error) {
-      if (this.legacyOutputEnabled) {
-        console.warn("Failed to cleanup screenshots:", error);
-      }
+      this.log.error(pc.red("Failed to clean up screenshots"), { error });
     }
   }
 

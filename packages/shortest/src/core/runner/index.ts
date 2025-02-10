@@ -6,22 +6,22 @@ import { APIRequest, BrowserContext } from "playwright";
 import * as playwright from "playwright";
 import { request, APIRequestContext } from "playwright";
 import { z } from "zod";
-import { AIClient } from "../../ai/client";
-import { BrowserTool } from "../../browser/core/browser-tool";
-import { BrowserManager } from "../../browser/manager";
-import { BaseCache } from "../../cache/cache";
-import { TestReporter } from "../../core/runner/test-reporter";
-import { initializeConfig, getConfig } from "../../index";
-
+import { AIClient } from "@/ai/client";
+import { BrowserTool } from "@/browser/core/browser-tool";
+import { BrowserManager } from "@/browser/manager";
+import { BaseCache } from "@/cache/cache";
+import { TestCompiler } from "@/core/compiler";
+import { TestReporter } from "@/core/runner/test-reporter";
+import { initializeConfig, getConfig } from "@/index";
+import { getLogger, Log } from "@/log/index";
 import {
   TestFunction,
   TestContext,
   ShortestConfig,
   BrowserActionEnum,
-} from "../../types";
-import { CacheEntry } from "../../types/cache";
-import { hashData } from "../../utils/crypto";
-import { TestCompiler } from "../compiler";
+} from "@/types";
+import { CacheEntry } from "@/types/cache";
+import { hashData } from "@/utils/crypto";
 
 export const TokenMetricsSchema = z.object({
   input: z.number().default(0),
@@ -56,31 +56,27 @@ export class TestRunner {
   private compiler: TestCompiler;
   private browserManager!: BrowserManager;
   private reporter: TestReporter;
-  private debugAI: boolean;
   private noCache: boolean;
   private testContext: TestContext | null = null;
   private cache: BaseCache<CacheEntry>;
-  private legacyOutputEnabled: boolean;
+  private log: Log;
 
   constructor(
     cwd: string,
     exitOnSuccess = true,
     forceHeadless = false,
     targetUrl?: string,
-    debugAI = false,
     noCache = false,
-    legacyOutputEnabled = false,
   ) {
     this.cwd = cwd;
     this.exitOnSuccess = exitOnSuccess;
     this.forceHeadless = forceHeadless;
     this.targetUrl = targetUrl;
-    this.debugAI = debugAI;
     this.noCache = noCache;
     this.compiler = new TestCompiler();
-    this.legacyOutputEnabled = legacyOutputEnabled;
-    this.reporter = new TestReporter(legacyOutputEnabled);
-    this.cache = new BaseCache(legacyOutputEnabled);
+    this.reporter = new TestReporter();
+    this.log = getLogger();
+    this.cache = new BaseCache();
   }
 
   async initialize() {
@@ -102,13 +98,11 @@ export class TestRunner {
       };
     }
 
-    this.browserManager = new BrowserManager(
-      this.config,
-      this.legacyOutputEnabled,
-    );
+    this.browserManager = new BrowserManager(this.config);
   }
 
   private async findTestFiles(pattern?: string): Promise<string[]> {
+    this.log.trace("Finding test files", { pattern });
     const testPattern = pattern || this.config.testPattern || "**/*.test.ts";
 
     const files = await glob(testPattern, {
@@ -121,6 +115,9 @@ export class TestRunner {
         "Test Discovery",
         `No test files found matching: ${testPattern}`,
       );
+      this.log.error("No test files found matching", {
+        pattern: testPattern,
+      });
       process.exit(1);
     }
 
@@ -192,20 +189,15 @@ export class TestRunner {
 
     // Use the shared context
     const testContext = await this.createTestContext(context);
-    const browserTool = new BrowserTool(
-      testContext.page,
-      this.browserManager,
-      this.legacyOutputEnabled,
-      {
-        width: 1920,
-        height: 1080,
-        testContext: {
-          ...testContext,
-          currentTest: test,
-          currentStepIndex: 0,
-        },
+    const browserTool = new BrowserTool(testContext.page, this.browserManager, {
+      width: 1920,
+      height: 1080,
+      testContext: {
+        ...testContext,
+        currentTest: test,
+        currentStepIndex: 0,
       },
-    );
+    });
 
     // this may never happen as the config is initialized before this code is executed
     if (!this.config.anthropicKey) {
@@ -221,8 +213,6 @@ export class TestRunner {
       apiKey: this.config.anthropicKey,
       model: "claude-3-5-sonnet-20241022",
       maxMessages: 10,
-      debug: this.debugAI,
-      legacyOutputEnabled: this.legacyOutputEnabled,
     });
 
     // First get page state
@@ -311,8 +301,9 @@ export class TestRunner {
     }
 
     // Execute test with enhanced prompt
+    this.log.setGroup("🤖");
     const result = await aiClient.processAction(prompt, browserTool);
-
+    this.log.resetGroup();
     if (!result) {
       throw new Error("AI processing failed: no result returned");
     }
@@ -376,21 +367,22 @@ export class TestRunner {
 
       const filePathWithoutCwd = file.replace(this.cwd + "/", "");
       const compiledPath = await this.compiler.compileFile(file);
+      this.log.trace("Importing compiled file", {
+        compiledPath,
+      });
       await import(pathToFileURL(compiledPath).href);
 
       let context;
       try {
+        this.log.trace("Launching browser");
         context = await this.browserManager.launch();
       } catch (error) {
-        if (this.legacyOutputEnabled) {
-          console.error(
-            `Browser initialization failed: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-        }
+        this.log.error(pc.red("Browser initialization failed"), {
+          error: error instanceof Error ? error.message : String(error),
+        });
         return;
       }
+      this.log.trace("Creating test context");
       const testContext = await this.createTestContext(context);
 
       try {
@@ -405,6 +397,7 @@ export class TestRunner {
         );
 
         // Execute tests in order they were defined
+        this.log.info(`Running ${registry.currentFileTests.length} test(s)`);
         for (const test of registry.currentFileTests) {
           // Execute beforeEach hooks with shared context
           for (const hook of registry.beforeEachFns) {
@@ -484,9 +477,10 @@ export class TestRunner {
     browserTool: BrowserTool,
   ): Promise<TestResult> {
     const cachedTest = await this.cache.get(test);
-    if (this.debugAI && this.legacyOutputEnabled) {
-      console.log(pc.green(`  Executing cached test ${hashData(test)}`));
-    }
+    this.log.debug("Running cached test", {
+      hash: hashData(test),
+    });
+    this.log.debug("💾", "Executing cached test", { hash: hashData(test) });
 
     const steps = cachedTest?.data.steps
       // do not take screenshots in cached mode
@@ -530,12 +524,10 @@ export class TestRunner {
         try {
           await browserTool.execute(step.action.input);
         } catch (error) {
-          if (this.legacyOutputEnabled) {
-            console.error(
-              `Failed to execute step with input ${step.action.input}`,
-              error,
-            );
-          }
+          this.log.error(pc.red("Failed to execute step"), {
+            input: step.action.input,
+            error,
+          });
         }
       }
     }
