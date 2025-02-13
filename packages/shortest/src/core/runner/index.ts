@@ -5,7 +5,7 @@ import { APIRequest, BrowserContext } from "playwright";
 import * as playwright from "playwright";
 import { request, APIRequestContext } from "playwright";
 import { z } from "zod";
-import { AIClient } from "@/ai/client";
+import { AIClient } from "@/ai/anthropic-client";
 import { BrowserTool } from "@/browser/core/browser-tool";
 import { BrowserManager } from "@/browser/manager";
 import { BaseCache } from "@/cache/cache";
