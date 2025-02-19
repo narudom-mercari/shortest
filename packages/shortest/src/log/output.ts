@@ -26,8 +26,6 @@ export class LogOutput {
     ...LOG_LEVELS.map((level) => level.length),
   );
 
-  private static readonly FILTERED_KEYS = ["apiKey"];
-
   /**
    * Renders a log event
    *
@@ -66,41 +64,6 @@ export class LogOutput {
     }
   }
 
-  private static parseAndFilterMetadata(
-    metadata: Record<string, any>,
-  ): Record<string, any> {
-    return Object.fromEntries(
-      Object.entries(metadata).map(([k, v]) => {
-        if (LogOutput.FILTERED_KEYS.includes(k)) {
-          return [k, "[FILTERED]"];
-        }
-
-        if (typeof v === "object" && v !== null) {
-          const stringified = JSON.stringify(
-            Object.fromEntries(
-              Object.entries(v).map(([k2, v2]) => {
-                if (LogOutput.FILTERED_KEYS.includes(k2)) {
-                  return [k2, "[FILTERED]"];
-                }
-                return [k2, v2];
-              }),
-            ),
-            null,
-            2,
-          );
-          return [k, stringified];
-        }
-
-        // Format string values with newlines
-        if (typeof v === "string" && v.includes("\n")) {
-          return [k, "\n  " + v.split("\n").join("\n  ")];
-        }
-
-        return [k, JSON.stringify(v)];
-      }),
-    );
-  }
-
   private static renderForReporter(event: LogEvent, group?: LogGroup): string {
     const INDENTATION_CHARACTER = "  ";
     const { message } = event;
@@ -115,7 +78,7 @@ export class LogOutput {
   }
 
   private static renderForTerminal(event: LogEvent, group?: LogGroup): string {
-    const { level, timestamp, metadata } = event;
+    const { level, timestamp, parsedMetadata } = event;
     let { message } = event;
     const groupIdentifiers = group ? group.getGroupIdentifiers() : [];
     let colorFn = pc.white;
@@ -138,18 +101,41 @@ export class LogOutput {
         break;
     }
 
-    const metadataStr = LogOutput.getMetadataString(metadata);
     if (event.level === "error") {
       message = pc.red(message);
     }
 
     let outputParts = [];
     outputParts.push(colorFn(`${level}`.padEnd(LogOutput.MAX_LEVEL_LENGTH)));
-    outputParts.push(timestamp);
+    outputParts.push(
+      timestamp.toLocaleTimeString("en-US", {
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
+    );
     outputParts.push(...groupIdentifiers.map((name) => pc.dim(name)));
     outputParts.push(message);
-    if (metadataStr) {
-      outputParts.push(metadataStr);
+    if (parsedMetadata) {
+      // Format metadata as "key=value" pairs, handling strings, null values, and nested objects
+      const formattedMetadata =
+        typeof parsedMetadata === "string"
+          ? parsedMetadata
+          : Object.entries(parsedMetadata)
+              .map(([k, v]) => {
+                const value =
+                  typeof v === "string"
+                    ? v.replace(/\\"/g, '"').replace(/\\n/g, "\n")
+                    : v === null || v === undefined
+                      ? "null"
+                      : JSON.stringify(v, null, 2).replace(/\\n/g, "\n");
+                return `${pc.dim(k)}=${value}${
+                  typeof value === "string" && value.includes("\n") ? "\n" : ""
+                }`;
+              })
+              .join(" ");
+      outputParts.push(formattedMetadata);
     }
 
     const output = outputParts.join(" | ");
@@ -157,16 +143,5 @@ export class LogOutput {
       return pc.yellowBright(output);
     }
     return output;
-  }
-
-  private static getMetadataString(
-    metadata: Record<string, any>,
-  ): string | undefined {
-    const parsedMetadata = LogOutput.parseAndFilterMetadata(metadata);
-    return metadata
-      ? Object.entries(parsedMetadata)
-          .map(([k, v]) => `${pc.dim(k)}=${v}`)
-          .join(" ")
-      : undefined;
   }
 }

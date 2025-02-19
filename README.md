@@ -33,6 +33,7 @@ npx @antiwork/shortest init
 ```
 
 This will:
+
 - Automatically install the `@antiwork/shortest` package as a dev dependency if it is not already installed
 - Create a default `shortest.config.ts` file with boilerplate configuration
 - Generate a `.env.local` file (unless present) with placeholders for required environment variables, such as `ANTHROPIC_API_KEY`
@@ -49,9 +50,12 @@ export default {
   headless: false,
   baseUrl: "http://localhost:3000",
   testPattern: "**/*.test.ts",
-  anthropicKey: process.env.ANTHROPIC_API_KEY,
+  ai: {
+    provider: "anthropic",
+  },
 } satisfies ShortestConfig;
 ```
+Anthropic API key will default to `SHORTEST_ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEY` environment variables. Can be overwritten via `ai.config.apiKey`.
 
 2. Create test files using the pattern specified in the config: `app/login.test.ts`
 
@@ -245,12 +249,14 @@ This guide will help you set up the Shortest web app for local development.
 ### Getting started
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/anti-work/shortest.git
 cd shortest
 ```
 
 2. Install dependencies:
+
 ```bash
 npm install -g pnpm
 pnpm install
@@ -335,6 +341,7 @@ You'll need to set up the following services for local development. If you're no
 <summary>GitHub OAuth</summary>
 
 1. Create a GitHub OAuth App:
+
    - Go to your GitHub account settings.
    - Navigate to `Developer settings` > `OAuth Apps` > `New OAuth App`.
    - Fill in the application details:
@@ -349,7 +356,7 @@ You'll need to set up the following services for local development. If you're no
    - Select `Use custom credentials`
    - Enter your `Client ID` and `Client Secret` from the GitHub OAuth app you just created.
    - Add `repo` to the `Scopes`
-   ![Clerk Custom Credentials](https://github.com/user-attachments/assets/31d414e1-4e1e-4725-8649-ec1826c6e53e)
+     ![Clerk Custom Credentials](https://github.com/user-attachments/assets/31d414e1-4e1e-4725-8649-ec1826c6e53e)
 
 </details>
 

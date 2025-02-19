@@ -2,21 +2,22 @@ import pc from "picocolors";
 import { FileResult, TestResult, TestStatus } from "@/core/runner/index";
 import { getLogger, Log } from "@/log/index";
 import { AssertionError, TestFunction } from "@/types/test";
+
 export class TestReporter {
   private startTime: number = Date.now();
   private reporterLog: Log;
   private log: Log;
 
   // token pricing (Claude 3.5 Sonnet)
-  private readonly COST_PER_1K_INPUT_TOKENS = 0.003;
-  private readonly COST_PER_1K_OUTPUT_TOKENS = 0.015;
+  private readonly COST_PER_1K_PROMPT_TOKENS = 0.003;
+  private readonly COST_PER_1K_COMPLETION_TOKENS = 0.015;
 
   private filesCount: number = 0;
   private testsCount: number = 0;
   private passedTestsCount: number = 0;
   private failedTestsCount: number = 0;
-  private totalInputTokens: number = 0;
-  private totalOutputTokens: number = 0;
+  private totalPromptTokens: number = 0;
+  private totalCompletionTokens: number = 0;
   private aiCost: number = 0;
 
   constructor() {
@@ -57,11 +58,11 @@ export class TestReporter {
     }
     let testAICost = 0;
     if (testResult.tokenUsage) {
-      this.totalInputTokens += testResult.tokenUsage.input;
-      this.totalOutputTokens += testResult.tokenUsage.output;
+      this.totalPromptTokens += testResult.tokenUsage.promptTokens;
+      this.totalCompletionTokens += testResult.tokenUsage.completionTokens;
       testAICost = this.calculateCost(
-        testResult.tokenUsage.input,
-        testResult.tokenUsage.output,
+        testResult.tokenUsage.promptTokens,
+        testResult.tokenUsage.completionTokens,
       );
       this.aiCost += testAICost;
     }
@@ -69,16 +70,14 @@ export class TestReporter {
     const color = testResult.status === "passed" ? pc.green : pc.red;
 
     this.reporterLog.info(`${color(`${symbol} ${testResult.status}`)}`);
-    if (testResult.tokenUsage.input > 0 || testResult.tokenUsage.output > 0) {
-      const totalTokens =
-        testResult.tokenUsage.input + testResult.tokenUsage.output;
+    if (testResult.tokenUsage.totalTokens > 0) {
       const cost = this.calculateCost(
-        testResult.tokenUsage.input,
-        testResult.tokenUsage.output,
+        testResult.tokenUsage.promptTokens,
+        testResult.tokenUsage.completionTokens,
       );
       this.reporterLog.info(
         pc.dim("↳"),
-        pc.dim(`${totalTokens.toLocaleString()} tokens`),
+        pc.dim(`${testResult.tokenUsage.totalTokens.toLocaleString()} tokens`),
         pc.dim(`(≈ $${cost.toFixed(2)})`),
       );
     }
@@ -93,6 +92,7 @@ export class TestReporter {
 
   onFileEnd(fileResult: FileResult) {
     if (fileResult.status === "failed") {
+      this.log.error("Error processing file", { ...fileResult });
       this.error("Error processing file", fileResult.reason);
     }
     this.reporterLog.resetGroup();
@@ -103,10 +103,15 @@ export class TestReporter {
     this.summary();
   }
 
-  private calculateCost(inputTokens: number, outputTokens: number): number {
-    const inputCost = (inputTokens / 1000) * this.COST_PER_1K_INPUT_TOKENS;
-    const outputCost = (outputTokens / 1000) * this.COST_PER_1K_OUTPUT_TOKENS;
-    return Math.round((inputCost + outputCost) * 1000) / 1000;
+  private calculateCost(
+    promptTokens: number,
+    completionTokens: number,
+  ): number {
+    const promptTokensCost =
+      (promptTokens / 1000) * this.COST_PER_1K_PROMPT_TOKENS;
+    const completionTokensCost =
+      (completionTokens / 1000) * this.COST_PER_1K_COMPLETION_TOKENS;
+    return Math.round((promptTokensCost + completionTokensCost) * 1000) / 1000;
   }
 
   private getStatusIcon(status: TestStatus): string {
@@ -124,10 +129,10 @@ export class TestReporter {
 
   private summary() {
     const duration = ((Date.now() - this.startTime) / 1000).toFixed(2);
-    const totalTokens = this.totalInputTokens + this.totalOutputTokens;
+    const totalTokens = this.totalPromptTokens + this.totalCompletionTokens;
     const aiCost = this.calculateCost(
-      this.totalInputTokens,
-      this.totalOutputTokens,
+      this.totalPromptTokens,
+      this.totalCompletionTokens,
     );
 
     this.reporterLog.setGroup("Summary");

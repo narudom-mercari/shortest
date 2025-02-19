@@ -23,8 +23,11 @@ describe("initializeConfig", () => {
         headless: true,
         baseUrl: "https://example.com",
         testPattern: ".*",
-        anthropicKey: "test-key",
-      }
+        ai: {
+          provider: "anthropic",
+          apiKey: "test-key",
+        }
+    }
       `,
     );
 
@@ -34,7 +37,11 @@ describe("initializeConfig", () => {
       headless: true,
       baseUrl: "https://example.com",
       testPattern: ".*",
-      anthropicKey: "test-key",
+      ai: {
+        provider: "anthropic",
+        apiKey: "test-key",
+        model: "claude-3-5-sonnet-20241022",
+      },
     });
   });
 
@@ -46,7 +53,11 @@ describe("initializeConfig", () => {
         headless: true,
         baseUrl: 'https://example.com',
         testPattern: '.*',
-        anthropicKey: 'test-key'
+        ai: {
+          provider: "anthropic",
+          apiKey: "test-key",
+          model: "claude-3-5-sonnet-20241022"
+        }
       }
       `,
     );
@@ -57,28 +68,12 @@ describe("initializeConfig", () => {
       headless: true,
       baseUrl: "https://example.com",
       testPattern: ".*",
-      anthropicKey: "test-key",
+      ai: {
+        provider: "anthropic",
+        apiKey: "test-key",
+        model: "claude-3-5-sonnet-20241022",
+      },
     });
-  });
-
-  test("prefers env ANTHROPIC_API_KEY over config key", async () => {
-    process.env.ANTHROPIC_API_KEY = "env-key";
-
-    await fs.writeFile(
-      path.join(tempDir, "shortest.config.ts"),
-      `
-      export default {
-        headless: true,
-        baseUrl: 'https://example.com',
-        testPattern: '.*',
-        anthropicKey: 'config-key'
-      }
-      `,
-    );
-
-    const { initializeConfig } = await import("@/index");
-    const config = await initializeConfig(tempDir);
-    expect(config?.anthropicKey).toBe("env-key");
   });
 
   test("throws when multiple config files exist", async () => {

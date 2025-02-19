@@ -1,72 +1,232 @@
 import { describe, test, expect, beforeEach } from "vitest";
+import { vi } from "vitest";
+import { getLogger } from "@/log/index";
+import { ShortestConfig } from "@/types";
 import { parseConfig } from "@/utils/config";
 
 describe("Config parsing", () => {
-  beforeEach(() => {
-    delete process.env.ANTHROPIC_API_KEY;
-  });
+  let baseConfig: ShortestConfig;
 
-  test("validates correct config", () => {
-    const config = {
+  beforeEach(() => {
+    baseConfig = {
       headless: true,
       baseUrl: "https://example.com",
       testPattern: ".*",
-      anthropicKey: "test-key",
+      ai: {
+        provider: "anthropic",
+        apiKey: "explicit-api-key",
+      },
     };
-    expect(() => parseConfig(config)).not.toThrow();
+  });
+
+  describe("with invalid config option", () => {
+    test("it throws an error", () => {
+      const userConfig = {
+        ...baseConfig,
+        invalidOption: "value",
+      };
+      expect(() => parseConfig(userConfig)).toThrowError(
+        "Unrecognized key(s) in object: 'invalidOption'",
+      );
+    });
+  });
+
+  describe("with invalid config.ai option", () => {
+    test("it throws an error", () => {
+      const userConfig = {
+        ...baseConfig,
+        ai: {
+          ...baseConfig.ai,
+          invalidAIOption: "value",
+        },
+      };
+      console.log(userConfig);
+      expect(() => parseConfig(userConfig)).toThrowError(
+        "Unrecognized key(s) in object: 'invalidAIOption'",
+      );
+    });
+  });
+
+  describe("with config.ai", () => {
+    describe("without ANTHROPIC_API_KEY", () => {
+      test("it throws an error", () => {
+        const userConfig = {
+          ...baseConfig,
+          ai: {
+            ...baseConfig.ai,
+            apiKey: undefined,
+          },
+        };
+        expect(() => parseConfig(userConfig)).toThrowError(
+          "Invalid shortest.config\nai.apiKey: Required",
+        );
+      });
+    });
+
+    describe("with ANTHROPIC_API_KEY", () => {
+      beforeEach(() => {
+        process.env.ANTHROPIC_API_KEY = "env-api-key";
+      });
+
+      describe("without ai.apiKey", () => {
+        test("uses value from ANTHROPIC_API_KEY", () => {
+          const userConfig = {
+            ...baseConfig,
+            ai: {
+              ...baseConfig.ai,
+              apiKey: undefined,
+            },
+          };
+          const config = parseConfig(userConfig);
+          expect(config.ai).toEqual({
+            apiKey: "env-api-key",
+            provider: "anthropic",
+            model: "claude-3-5-sonnet-20241022",
+          });
+        });
+      });
+
+      describe("with SHORTTEST_ANTHROPIC_API_KEY", () => {
+        beforeEach(() => {
+          process.env.SHORTTEST_ANTHROPIC_API_KEY = "shortest-env-api-key";
+        });
+
+        test("uses value from SHORTTEST_ANTHROPIC_API_KEY", () => {
+          const userConfig = {
+            ...baseConfig,
+            ai: {
+              ...baseConfig.ai,
+              apiKey: undefined,
+            },
+          };
+          const config = parseConfig(userConfig);
+          expect(config.ai).toEqual({
+            apiKey: "shortest-env-api-key",
+            provider: "anthropic",
+            model: "claude-3-5-sonnet-20241022",
+          });
+        });
+      });
+
+      describe("with ai.apiKey", () => {
+        test("uses the explicit ai.apiKey", () => {
+          process.env.ANTHROPIC_API_KEY = "env-api-key";
+          const config = parseConfig(baseConfig);
+          expect(config.ai).toEqual({
+            apiKey: "explicit-api-key",
+            provider: "anthropic",
+            model: "claude-3-5-sonnet-20241022",
+          });
+        });
+      });
+    });
+
+    describe("with config.anthropicKey set", () => {
+      test("throws ConfigError", () => {
+        const userConfig = {
+          ...baseConfig,
+          anthropicKey: "deprecated-api-key",
+        };
+        expect(() => parseConfig(userConfig)).toThrowError(
+          "'config.anthropicKey' conflicts with 'config.ai.apiKey'. Please remove 'config.anthropicKey'.",
+        );
+      });
+    });
+
+    describe("with ai.provider unknown", () => {
+      test("throws an error", () => {
+        const userConfig = {
+          ...baseConfig,
+          ai: {
+            ...baseConfig.ai,
+            provider: "unknown" as any,
+          },
+        };
+        expect(() => parseConfig(userConfig)).toThrowError(
+          'Invalid shortest.config\nai.provider: Invalid literal value, expected "anthropic"',
+        );
+      });
+    });
+
+    describe("with invalid ai.model", () => {
+      test("throws an error", () => {
+        const userConfig = {
+          ...baseConfig,
+          ai: { ...baseConfig.ai, model: "invalid-model" as any },
+        };
+        expect(() => parseConfig(userConfig)).toThrowError(
+          "Invalid shortest.config\nai.model: Invalid enum value. Expected 'claude-3-5-sonnet-20241022', received 'invalid-model'",
+        );
+      });
+    });
+  });
+
+  describe("without config.ai", () => {
+    describe("without ANTHROPIC_API_KEY", () => {
+      describe("with config.anthropicKey", () => {
+        test("logs deprecation warning and creates config.ai", () => {
+          const mockWarn = vi.fn();
+          vi.spyOn(getLogger(), "warn").mockImplementation(mockWarn);
+
+          const userConfig = {
+            ...baseConfig,
+            anthropicKey: "deprecated-api-key",
+          };
+          delete userConfig.ai;
+          const config = parseConfig(userConfig);
+
+          expect(mockWarn).toHaveBeenCalledWith(
+            "'config.anthropicKey' option is deprecated. Use 'config.ai' structure instead.",
+          );
+          expect(config.ai).toEqual({
+            provider: "anthropic",
+            apiKey: "deprecated-api-key",
+            model: "claude-3-5-sonnet-20241022",
+          });
+        });
+      });
+
+      describe("without config.anthropicKey", () => {
+        test("throws an error", () => {
+          const userConfig = {
+            ...baseConfig,
+          };
+          delete userConfig.ai;
+          expect(() => parseConfig(userConfig)).toThrowError(
+            "Invalid shortest.config\nai: Required",
+          );
+        });
+      });
+    });
   });
 
   test("throws on invalid baseUrl", () => {
-    const config = {
-      headless: true,
+    const userConfig = {
+      ...baseConfig,
       baseUrl: "not-a-url",
-      testPattern: ".*",
-      anthropicKey: "test",
     };
-    expect(() => parseConfig(config)).toThrowError("must be a valid URL");
-  });
-
-  test("throws on invalid testPattern", () => {
-    const config = {
-      headless: true,
-      baseUrl: "https://example.com",
-      testPattern: null,
-      anthropicKey: "test",
-    };
-    expect(() => parseConfig(config)).toThrowError(
-      "Expected string, received null",
+    expect(() => parseConfig(userConfig)).toThrowError(
+      "Invalid shortest.config\nbaseUrl: must be a valid URL",
     );
   });
 
-  test("throws when Mailosaur config is incomplete", () => {
-    const config = {
-      headless: true,
-      baseUrl: "https://example.com",
-      testPattern: ".*",
-      anthropicKey: "test",
-      mailosaur: { apiKey: "key" }, // missing serverId
+  test("throws on invalid testPattern", () => {
+    const userConfig = {
+      ...baseConfig,
+      testPattern: null as any,
     };
-    expect(() => parseConfig(config)).toThrowError("Required");
+    expect(() => parseConfig(userConfig)).toThrowError(
+      "Invalid shortest.config\ntestPattern: Expected string, received null",
+    );
   });
 
-  test("accepts config when anthropicKey is in env", () => {
-    process.env.ANTHROPIC_API_KEY = "test-key";
-    const config = {
-      headless: true,
-      baseUrl: "https://example.com",
-      testPattern: ".*",
+  test("throws when mailosaur.serverId is missing", () => {
+    const userConfig = {
+      ...baseConfig,
+      mailosaur: { apiKey: "key" } as any,
     };
-    expect(() => parseConfig(config)).not.toThrow();
-  });
-
-  test("throws when anthropicKey is missing from both config and env", () => {
-    const config = {
-      headless: true,
-      baseUrl: "https://example.com",
-      testPattern: ".*",
-    };
-    expect(() => parseConfig(config)).toThrowError(
-      "anthropicKey must be provided",
+    expect(() => parseConfig(userConfig)).toThrowError(
+      "Invalid shortest.config\nmailosaur.serverId: Required",
     );
   });
 });

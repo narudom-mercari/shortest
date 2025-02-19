@@ -3,6 +3,7 @@
 AI-powered natural language end-to-end testing framework.
 
 ## Features
+
 - Natural language test writing
 - AI-powered test execution using Claude computer use API
 - Built on Playwright
@@ -19,9 +20,11 @@ npx @antiwork/shortest init
 ```
 
 This will:
+
 - Automatically install the `@antiwork/shortest` package as a dev dependency if it is not already installed
 - Create a default `shortest.config.ts` file with boilerplate configuration
-- Generate a `.env.local` file (unless present) with placeholders for required environment variables, such as `ANTHROPIC_API_KEY`
+- Generate a `.env.local` file (unless present) with placeholders for required environment variables, such as
+  `SHORTEST_ANTHROPIC_API_KEY` or `ANTHROPIC_API_KEY`
 - Add `.env.local` and `.shortest/` to `.gitignore`
 
 ### Quick start
@@ -35,9 +38,13 @@ export default {
   headless: false,
   baseUrl: "http://localhost:3000",
   testPattern: "**/*.test.ts",
-  anthropicKey: process.env.ANTHROPIC_API_KEY,
+  ai: {
+    provider: "anthropic",
+  },
 } satisfies ShortestConfig;
 ```
+Anthropic API key will default to `SHORTEST_ANTHROPIC_API_KEY` / `ANTHROPIC_API_KEY` environment variables. Can be overwritten via `ai.config.apiKey`.
+
 
 2. Create test files using the pattern specified in the config: `app/login.test.ts`
 
@@ -217,11 +224,13 @@ GITHUB_TOTP_SECRET=your_secret  # Only for GitHub auth tests
 You can run Shortest in your CI/CD pipeline by running tests in headless mode. Make sure to add your Anthropic API key to your CI/CD pipeline secrets.
 
 ## Resources
-* Visit [GitHub](https://github.com/anti-work/shortest) for detailed docs
-* [Contributing guide](./CONTRIBUTING.md)
-* [Changelog](https://github.com/anti-work/shortest/releases)
+
+- Visit [GitHub](https://github.com/anti-work/shortest) for detailed docs
+- [Contributing guide](./CONTRIBUTING.md)
+- [Changelog](https://github.com/anti-work/shortest/releases)
 
 ### Prerequisites
+
 - React >=19.0.0 (if using with Next.js 14+ or Server Actions)
 - Next.js >=14.0.0 (if using Server Components/Actions)
 
