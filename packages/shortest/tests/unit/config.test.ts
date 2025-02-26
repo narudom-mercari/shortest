@@ -89,7 +89,7 @@ describe("Config parsing", () => {
           },
         };
         expect(() => parseConfig(userConfig)).toThrowError(
-          "Invalid shortest.config\nai.apiKey: Required",
+          /Invalid shortest\.config\n(?:\u001b\[\d+m)?ai\.apiKey(?:\u001b\[\d+m)?: Required \(received: "undefined"\)/,
         );
       });
     });
@@ -174,7 +174,7 @@ describe("Config parsing", () => {
           },
         };
         expect(() => parseConfig(userConfig)).toThrowError(
-          'Invalid shortest.config\nai.provider: Invalid literal value, expected "anthropic"',
+          /Invalid shortest\.config\n(?:\u001b\[\d+m)?ai\.provider(?:\u001b\[\d+m)?: Invalid literal value, expected "anthropic" \(received: "unknown"\)/,
         );
       });
     });
@@ -186,7 +186,7 @@ describe("Config parsing", () => {
           ai: { ...baseConfig.ai, model: "invalid-model" as any },
         };
         expect(() => parseConfig(userConfig)).toThrowError(
-          "Invalid shortest.config\nai.model: Invalid enum value. Expected 'claude-3-5-sonnet-20241022', received 'invalid-model'",
+          /Invalid shortest\.config\n(?:\u001b\[\d+m)?ai\.model(?:\u001b\[\d+m)?: Invalid enum value\. Expected 'claude-3-5-sonnet-20241022', received 'invalid-model'(?:\s\(received: "invalid-model"\))?/,
         );
       });
     });
@@ -224,7 +224,7 @@ describe("Config parsing", () => {
           };
           delete userConfig.ai;
           expect(() => parseConfig(userConfig)).toThrowError(
-            "Invalid shortest.config\nai: Required",
+            /Invalid shortest\.config\n(?:\u001b\[\d+m)?ai(?:\u001b\[\d+m)?: Required \(received: "undefined"\)/,
           );
         });
       });
@@ -237,7 +237,7 @@ describe("Config parsing", () => {
       baseUrl: "not-a-url",
     };
     expect(() => parseConfig(userConfig)).toThrowError(
-      "Invalid shortest.config\nbaseUrl: must be a valid URL",
+      /Invalid shortest\.config\n(?:\u001b\[\d+m)?baseUrl(?:\u001b\[\d+m)?: must be a valid URL/,
     );
   });
 
@@ -247,7 +247,7 @@ describe("Config parsing", () => {
       testPattern: null as any,
     };
     expect(() => parseConfig(userConfig)).toThrowError(
-      "Invalid shortest.config\ntestPattern: Expected string, received null",
+      /Invalid shortest\.config\n(?:\u001b\[\d+m)?testPattern(?:\u001b\[\d+m)?: Expected string, received null \(received: "null"\)/,
     );
   });
 
@@ -257,7 +257,7 @@ describe("Config parsing", () => {
       mailosaur: { apiKey: "key" } as any,
     };
     expect(() => parseConfig(userConfig)).toThrowError(
-      "Invalid shortest.config\nmailosaur.serverId: Required",
+      /Invalid shortest\.config\n(?:\u001b\[\d+m)?mailosaur\.serverId(?:\u001b\[\d+m)?: Required \(received: "undefined"\)/,
     );
   });
 });
