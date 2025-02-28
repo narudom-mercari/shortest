@@ -9,6 +9,10 @@ import { BrowserTool } from "@/browser/core/browser-tool";
 import { BrowserManager } from "@/browser/manager";
 import { TestCache } from "@/cache";
 import { TestCompiler } from "@/core/compiler";
+import {
+  EXPRESSION_PLACEHOLDER,
+  parseShortestTestFile,
+} from "@/core/runner/test-file-parser";
 import { TestReporter } from "@/core/runner/test-reporter";
 import { getLogger, Log } from "@/log";
 import {
@@ -281,16 +285,78 @@ export class TestRunner {
     };
   }
 
-  private async executeTestFile(file: string) {
+  private async filterTestsByLineNumber(
+    tests: TestFunction[],
+    file: string,
+    lineNumber: number,
+  ): Promise<TestFunction[]> {
+    const testLocations = parseShortestTestFile(file);
+    const escapeRegex = (str: string) =>
+      str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+    const filteredTests = tests.filter((test) => {
+      const testNameNormalized = test.name.trim();
+      let testLocation = testLocations.find(
+        (location) => location.testName === testNameNormalized,
+      );
+
+      if (!testLocation) {
+        testLocation = testLocations.find((location) => {
+          const TEMP_TOKEN = "##PLACEHOLDER##";
+          let pattern = location.testName.replace(
+            new RegExp(escapeRegex(EXPRESSION_PLACEHOLDER), "g"),
+            TEMP_TOKEN,
+          );
+
+          pattern = escapeRegex(pattern);
+          pattern = pattern.replace(new RegExp(TEMP_TOKEN, "g"), ".*");
+          const regex = new RegExp(`^${pattern}$`);
+
+          return regex.test(testNameNormalized);
+        });
+      }
+
+      if (!testLocation) {
+        return false;
+      }
+
+      const isInRange =
+        lineNumber >= testLocation.startLine &&
+        lineNumber <= testLocation.endLine;
+      return isInRange;
+    });
+
+    return filteredTests;
+  }
+
+  private async executeTestFile(file: string, lineNumber?: number) {
     try {
+      this.log.trace("Executing test file", { file, lineNumber });
       const registry = (global as any).__shortest__.registry;
       registry.tests.clear();
       registry.currentFileTests = [];
 
       const filePathWithoutCwd = file.replace(this.cwd + "/", "");
       const compiledPath = await this.compiler.compileFile(file);
+
       this.log.trace("Importing compiled file", { compiledPath });
       await import(pathToFileURL(compiledPath).href);
+      let testsToRun = registry.currentFileTests;
+
+      if (lineNumber) {
+        testsToRun = await this.filterTestsByLineNumber(
+          registry.currentFileTests,
+          file,
+          lineNumber,
+        );
+        if (testsToRun.length === 0) {
+          this.reporter.error(
+            "Test Discovery",
+            `No test found at line ${lineNumber} in ${filePathWithoutCwd}`,
+          );
+          process.exit(1);
+        }
+      }
 
       let context;
       try {
@@ -309,14 +375,11 @@ export class TestRunner {
           await hook(testContext);
         }
 
-        this.reporter.onFileStart(
-          filePathWithoutCwd,
-          registry.currentFileTests.length,
-        );
+        this.reporter.onFileStart(filePathWithoutCwd, testsToRun.length);
 
         // Execute tests in order they were defined
-        this.log.info(`Running ${registry.currentFileTests.length} test(s)`);
-        for (const test of registry.currentFileTests) {
+        this.log.info(`Running ${testsToRun.length} test(s)`);
+        for (const test of testsToRun) {
           // Execute beforeEach hooks with shared context
           for (const hook of registry.beforeEachFns) {
             await hook(testContext);
@@ -363,12 +426,15 @@ export class TestRunner {
     }
   }
 
-  async execute(testPattern: string): Promise<boolean> {
+  async execute(testPattern: string, lineNumber?: number): Promise<boolean> {
     this.log.trace("Finding test files", { testPattern });
+
     const files = await glob(testPattern, {
       cwd: this.cwd,
       absolute: true,
     });
+    this.log.trace("Found test files", { files });
+
     if (files.length === 0) {
       this.reporter.error(
         "Test Discovery",
@@ -382,7 +448,7 @@ export class TestRunner {
 
     this.reporter.onRunStart(files.length);
     for (const file of files) {
-      await this.executeTestFile(file);
+      await this.executeTestFile(file, lineNumber);
     }
     this.reporter.onRunEnd();
 

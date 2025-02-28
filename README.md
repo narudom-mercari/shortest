@@ -190,9 +190,10 @@ shortest(`
 ### Running tests
 
 ```bash
-pnpm shortest                              # Run all tests
-pnpm shortest __tests__/login.test.ts      # Run specific test
-pnpm shortest --headless                   # Run in headless mode using CLI
+pnpm shortest                   # Run all tests
+pnpm shortest login.test.ts     # Run specific tests from a file
+pnpm shortest login.test.ts:23  # Run specific test from a file using a line number
+pnpm shortest --headless        # Run in headless mode using
 ```
 
 You can find example tests in the [`examples`](./examples) directory.

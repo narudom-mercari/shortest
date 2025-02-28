@@ -125,11 +125,12 @@ const createTestChain = (
 ): TestChain => {
   const registry = global.__shortest__.registry;
 
+  const normalizeName = (name: string) => name.replace(/\s+/g, " ").trim();
   // Handle array of test names
   if (Array.isArray(nameOrFn)) {
     const tests = nameOrFn.map((name) => {
       const test: TestFunction = {
-        name,
+        name: normalizeName(name),
         filePath: "",
         expectations: [],
       };
@@ -179,7 +180,7 @@ const createTestChain = (
 
   // Rest of existing createTestChain implementation...
   const test: TestFunction = {
-    name: nameOrFn,
+    name: normalizeName(nameOrFn),
     filePath: "",
     payload: typeof payloadOrFn === "function" ? undefined : payloadOrFn,
     fn: typeof payloadOrFn === "function" ? payloadOrFn : fn,
