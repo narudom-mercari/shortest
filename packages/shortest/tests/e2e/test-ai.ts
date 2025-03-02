@@ -3,8 +3,8 @@ import * as playwright from "playwright";
 import { request } from "playwright";
 import { BrowserTool } from "@/browser/core/browser-tool";
 import { BrowserManager } from "@/browser/manager";
+import { createTestCase } from "@/core/runner/test-case";
 import { getConfig, initializeConfig } from "@/index";
-import type { TestFunction } from "@/types/test";
 
 export const main = async () => {
   console.log(pc.cyan("\n🧪 Testing AI Integration"));
@@ -36,7 +36,7 @@ export const main = async () => {
     };
 
     // Mock test data with callback
-    const mockTest: TestFunction = {
+    const mockTest = createTestCase({
       name: "Test with callback",
       filePath: "test-ai.ts",
       fn: async () => {
@@ -50,7 +50,7 @@ export const main = async () => {
           },
         },
       ],
-    };
+    });
 
     const browserTool = new BrowserTool(page, browserManager, {
       width: 1920,

@@ -3,8 +3,8 @@ import path from "path";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { CACHE_DIR_PATH } from "@/cache";
 import { TestCache } from "@/cache/test-cache";
+import { createTestCase } from "@/core/runner/test-case";
 import { CacheEntry, CacheStep } from "@/types/cache";
-import { TestFunction } from "@/types/test";
 import { createHash } from "@/utils/create-hash";
 
 describe("TestCache", () => {
@@ -13,11 +13,11 @@ describe("TestCache", () => {
   }
 
   let testCache: TestCache;
-  const mockTest: TestFunction = {
-    name: "test",
-    filePath: "test.ts",
+  const mockTest = createTestCase({
+    name: "Test Cache Mock",
+    filePath: "/path/to/test.ts",
     fn: () => Promise.resolve(),
-  };
+  });
 
   beforeEach<TestContext>(async (context) => {
     // Create and store the unique test directory in the context
@@ -66,7 +66,7 @@ describe("TestCache", () => {
     it<TestContext>("returns null on invalid JSON", async ({ cacheDir }) => {
       const cacheFilePath = path.join(
         cacheDir,
-        `${testCache["identifier"]}.json`,
+        `${testCache["testCase"].identifier}.json`,
       );
       await fs.writeFile(cacheFilePath, "invalid json");
 
@@ -117,11 +117,11 @@ describe("TestCache", () => {
   describe("delete", () => {
     it<TestContext>("removes cache and lock files", async ({ cacheDir }) => {
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const cacheFileName = `${timestamp}_${testCache["identifier"]}.json`;
+      const cacheFileName = `${timestamp}_${testCache["testCase"].identifier}.json`;
       const cacheFilePath = path.join(cacheDir, cacheFileName);
       const lockFilePath = path.join(
         cacheDir,
-        `${testCache["identifier"]}.lock`,
+        `${testCache["testCase"].identifier}.lock`,
       );
 
       await fs.mkdir(path.dirname(cacheFilePath), { recursive: true });
@@ -163,7 +163,7 @@ describe("TestCache", () => {
     }) => {
       const lockFilePath = path.join(
         cacheDir,
-        `${testCache["identifier"]}.lock`,
+        `${testCache["testCase"].identifier}.lock`,
       );
 
       await testCache.set();

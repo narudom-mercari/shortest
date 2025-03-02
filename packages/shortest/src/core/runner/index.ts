@@ -9,18 +9,14 @@ import { BrowserTool } from "@/browser/core/browser-tool";
 import { BrowserManager } from "@/browser/manager";
 import { TestCache } from "@/cache";
 import { TestCompiler } from "@/core/compiler";
+import { TestCase } from "@/core/runner/test-case";
 import {
   EXPRESSION_PLACEHOLDER,
   parseShortestTestFile,
 } from "@/core/runner/test-file-parser";
 import { TestReporter } from "@/core/runner/test-reporter";
 import { getLogger, Log } from "@/log";
-import {
-  TestFunction,
-  TestContext,
-  InternalActionEnum,
-  ShortestStrictConfig,
-} from "@/types";
+import { TestContext, InternalActionEnum, ShortestStrictConfig } from "@/types";
 import { TokenUsageSchema } from "@/types/ai";
 import {
   CacheError,
@@ -33,7 +29,7 @@ const testStatusSchema = z.enum(["pending", "running", "passed", "failed"]);
 export type TestStatus = z.infer<typeof testStatusSchema>;
 
 export const TestResultSchema = z.object({
-  test: z.any() as z.ZodType<TestFunction>,
+  test: z.any() as z.ZodType<TestCase>,
   status: testStatusSchema,
   reason: z.string(),
   tokenUsage: TokenUsageSchema,
@@ -72,7 +68,7 @@ export class TestRunner {
     context: BrowserContext,
   ): Promise<TestContext> {
     if (!this.testContext) {
-      // Create a properly typed playwright object
+      // Create a properly typed Playwright object
       const playwrightObj = {
         ...playwright,
         request: {
@@ -105,7 +101,7 @@ export class TestRunner {
   }
 
   private async executeTest(
-    test: TestFunction,
+    test: TestCase,
     context: BrowserContext,
     skipCache: boolean = false,
   ): Promise<TestResult> {
@@ -286,10 +282,10 @@ export class TestRunner {
   }
 
   private async filterTestsByLineNumber(
-    tests: TestFunction[],
+    tests: TestCase[],
     file: string,
     lineNumber: number,
-  ): Promise<TestFunction[]> {
+  ): Promise<TestCase[]> {
     const testLocations = parseShortestTestFile(file);
     const escapeRegex = (str: string) =>
       str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -329,15 +325,15 @@ export class TestRunner {
     return filteredTests;
   }
 
-  private async executeTestFile(file: string, lineNumber?: number) {
+  private async executeTestFile(filePath: string, lineNumber?: number) {
+    const registry = (global as any).__shortest__.registry;
     try {
-      this.log.trace("Executing test file", { file, lineNumber });
-      const registry = (global as any).__shortest__.registry;
+      this.log.trace("Executing test file", { filePath, lineNumber });
       registry.tests.clear();
       registry.currentFileTests = [];
-
-      const filePathWithoutCwd = file.replace(this.cwd + "/", "");
-      const compiledPath = await this.compiler.compileFile(file);
+      const filePathWithoutCwd = filePath.replace(this.cwd + "/", "");
+      registry.currentFilePath = filePathWithoutCwd;
+      const compiledPath = await this.compiler.compileFile(filePath);
 
       this.log.trace("Importing compiled file", { compiledPath });
       await import(pathToFileURL(compiledPath).href);
@@ -346,7 +342,7 @@ export class TestRunner {
       if (lineNumber) {
         testsToRun = await this.filterTestsByLineNumber(
           registry.currentFileTests,
-          file,
+          filePath,
           lineNumber,
         );
         if (testsToRun.length === 0) {
@@ -357,7 +353,6 @@ export class TestRunner {
           process.exit(1);
         }
       }
-
       let context;
       try {
         this.log.trace("Launching browser");
@@ -407,7 +402,7 @@ export class TestRunner {
         registry.beforeEachFns = [];
         registry.afterEachFns = [];
         const fileResult: FileResult = {
-          filePath: file,
+          filePath,
           status: "passed",
           reason: "",
         };
@@ -416,13 +411,15 @@ export class TestRunner {
     } catch (error) {
       this.log.trace("Handling error for executeTestFile");
       if (!(error instanceof ShortestError)) throw error;
-      this.testContext = null; // Reset on error
       const fileResult: FileResult = {
-        filePath: file,
+        filePath,
         status: "failed",
         reason: error.message,
       };
       this.reporter.onFileEnd(fileResult);
+    } finally {
+      registry.currentFilePath = "";
+      this.testContext = null;
     }
   }
 
@@ -456,7 +453,7 @@ export class TestRunner {
   }
 
   private async runCachedTest(
-    test: TestFunction,
+    test: TestCase,
     browserTool: BrowserTool,
     testCache: TestCache,
   ): Promise<TestResult> {
