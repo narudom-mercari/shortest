@@ -7,13 +7,7 @@ declare global {
   }
 }
 
-import {
-  writeFileSync,
-  mkdirSync,
-  readdirSync,
-  statSync,
-  unlinkSync,
-} from "fs";
+import * as fs from "fs/promises";
 import { join } from "path";
 import { Page } from "playwright";
 import * as actions from "@/browser/actions";
@@ -21,8 +15,7 @@ import { BaseBrowserTool } from "@/browser/core";
 import { GitHubTool } from "@/browser/integrations/github";
 import { MailosaurTool } from "@/browser/integrations/mailosaur";
 import { BrowserManager } from "@/browser/manager";
-import { DOT_SHORTEST_DIR_PATH } from "@/cache";
-import { TestCase } from "@/core/runner/test-case";
+import { TestRunRepository } from "@/core/runner/test-run-repository";
 import { getConfig, initializeConfig } from "@/index";
 import { getLogger, Log } from "@/log/index";
 import { TestContext, BrowserToolConfig, ShortestConfig } from "@/types";
@@ -39,12 +32,11 @@ export class BrowserTool extends BaseBrowserTool {
   private browserManager: BrowserManager;
   protected readonly toolType: BetaToolType = "computer_20241022";
   protected readonly toolName: string = "computer";
-  private screenshotDir: string;
   private cursorVisible: boolean = true;
   private lastMousePosition: [number, number] = [0, 0];
   private githubTool?: GitHubTool;
   private viewport: { width: number; height: number };
-  private testContext?: TestContext;
+  private testContext: TestContext;
   private readonly MAX_SCREENSHOTS = 10;
   private readonly MAX_AGE_HOURS = 5;
   private mailosaurTool?: MailosaurTool;
@@ -58,8 +50,6 @@ export class BrowserTool extends BaseBrowserTool {
     super(config);
     this.page = page;
     this.browserManager = browserManager;
-    this.screenshotDir = join(DOT_SHORTEST_DIR_PATH, "screenshots");
-    mkdirSync(this.screenshotDir, { recursive: true });
     this.viewport = { width: config.width, height: config.height };
     this.testContext = config.testContext;
     this.log = getLogger();
@@ -70,7 +60,6 @@ export class BrowserTool extends BaseBrowserTool {
     });
 
     this.initialize();
-    this.cleanupScreenshots();
   }
 
   private async initialize(): Promise<void> {
@@ -415,26 +404,20 @@ export class BrowserTool extends BaseBrowserTool {
           };
 
         case InternalActionEnum.RUN_CALLBACK: {
-          if (!this.testContext?.currentTest) {
-            throw new ToolError(
-              "No test context available for callback execution",
-            );
-          }
-
           const testContext = this.testContext;
-          const currentTest = testContext.currentTest as TestCase;
+          const testCase = testContext.testRun.testCase;
 
           const currentStepIndex = testContext.currentStepIndex ?? 0;
 
           try {
-            if (currentStepIndex === 0 && currentTest.fn) {
-              await currentTest.fn(testContext);
+            if (currentStepIndex === 0 && testCase.fn) {
+              await testCase.fn(testContext);
               testContext.currentStepIndex = 1;
               return { output: "Test function executed successfully" };
             }
             // Handle expectations
             const expectationIndex = currentStepIndex - 1;
-            const expectation = currentTest.expectations?.[expectationIndex];
+            const expectation = testCase.expectations?.[expectationIndex];
 
             if (expectation?.fn) {
               await expectation.fn(this.testContext);
@@ -806,7 +789,13 @@ export class BrowserTool extends BaseBrowserTool {
 
   private async takeScreenshotWithMetadata(): Promise<ToolResult> {
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-    const filePath = join(this.screenshotDir, `screenshot-${timestamp}.png`);
+
+    const testRun = this.testContext.testRun;
+    const repository = TestRunRepository.getRepositoryForTestCase(
+      testRun.testCase,
+    );
+    const testRunDirPath = await repository.ensureTestRunDirPath(testRun);
+    const screenshotPath = join(testRunDirPath, `screenshot-${timestamp}.png`);
 
     const buffer = await this.page.screenshot({
       type: "jpeg",
@@ -815,14 +804,15 @@ export class BrowserTool extends BaseBrowserTool {
       fullPage: false,
     });
 
-    writeFileSync(filePath, buffer);
-    const filePathWithoutCwd = filePath.replace(process.cwd() + "/", "");
+    await fs.writeFile(screenshotPath, buffer);
+    const filePathWithoutCwd = screenshotPath.replace(process.cwd() + "/", "");
 
     const browserMetadata = await this.getMetadata();
     this.log.trace("Screenshot saved", {
       filePath: filePathWithoutCwd,
       ...browserMetadata["window_info"],
     });
+
     return {
       output: "Screenshot taken",
       base64_image: buffer.toString("base64"),
@@ -875,40 +865,6 @@ export class BrowserTool extends BaseBrowserTool {
 
   updateTestContext(newContext: TestContext) {
     this.testContext = newContext;
-  }
-
-  private cleanupScreenshots(): void {
-    try {
-      const files = readdirSync(this.screenshotDir)
-        .filter((file) => file.endsWith(".png") || file.endsWith(".jpg"))
-        .map((file) => ({
-          name: file,
-          path: join(this.screenshotDir, file),
-          time: statSync(join(this.screenshotDir, file)).mtime.getTime(),
-        }))
-        .sort((a, b) => b.time - a.time); // newest first
-
-      const now = Date.now();
-      const fiveHoursMs = this.MAX_AGE_HOURS * 60 * 60 * 1000;
-
-      files.forEach((file, index) => {
-        const isOld = now - file.time > fiveHoursMs;
-        const isBeyondLimit = index >= this.MAX_SCREENSHOTS;
-
-        if (isOld || isBeyondLimit) {
-          try {
-            unlinkSync(file.path);
-          } catch (error: unknown) {
-            this.log.error(
-              "Failed to delete screenshot",
-              getErrorDetails(error),
-            );
-          }
-        }
-      });
-    } catch (error) {
-      this.log.error("Failed to clean up screenshots", getErrorDetails(error));
-    }
   }
 
   async showCursor(): Promise<void> {
