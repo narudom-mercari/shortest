@@ -26,7 +26,7 @@ export type AnthropicModel = z.infer<typeof anthropicModelSchema>;
 
 const aiSchema = z
   .object({
-    provider: z.literal("anthropic"),
+    provider: z.enum(["anthropic", "vertex"]),
     apiKey: z
       .string()
       .default(
